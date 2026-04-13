@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================
+// PLANS
+// ================================
+model Plan {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  price          Int
+  maxProducts    Int
+  paymentGateway Boolean  @default(false)
+  customDomain   Boolean  @default(false)
+  analytics      Boolean  @default(false)
+  features       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenants       Tenant[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+// ================================
+// TENANTS
+// ================================
+model Tenant {
+  id           String       @id @default(cuid())
+  planId       String
+  name         String
+  subdomain    String       @unique
+  customDomain String?      @unique
+  status       TenantStatus @default(active)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  plan          Plan           @relation(fields: [planId], references: [id])
+  users         User[]
+  store         Store?
+  subscriptions Subscription[]
+
+  @@map("tenants")
+}
+
+enum TenantStatus {
+  active
+  grace_period
+  suspended
+  cancelled
+  trial
+}
+
+// ================================
+// USERS
+// ================================
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(seller)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
+
+enum UserRole {
+  seller
+  per_admin
+}
+
+// ================================
+// STORES
+// ================================
+model Store {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  title             String
+  description       String?
+  logoUrl           String?
+  theme             String   @default("default")
+  seoMeta           Json?
+  landingPageConfig Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+  orders   Order[]
+
+  @@map("stores")
+}
+
+// ================================
+// SUBSCRIPTIONS
+// ================================
+model Subscription {
+  id         String             @id @default(cuid())
+  tenantId   String
+  planId     String
+  status     SubscriptionStatus @default(active)
+  startsAt   DateTime           @default(now())
+  endsAt     DateTime
+  expiresAt  DateTime
+  graceUntil DateTime?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  active
+  grace_period
+  suspended
+  cancelled
+  trial
+}
+
+// ================================
+// PRODUCTS
+// ================================
+model Product {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  slug        String
+  description String?
+  price       Int
+  stock       Int      @default(0)
+  imageUrls   String[]
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@unique([storeId, slug])
+  @@map("products")
+}
+
+// ================================
+// ORDERS
+// ================================
+model Order {
+  id          String      @id @default(cuid())
+  storeId     String
+  buyerName   String
+  buyerEmail  String
+  totalAmount Int
+  status      OrderStatus @default(pending)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  payment    Payment?
+
+  @@index([storeId, status])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  pending
+  paid
+  processing
+  shipped
+  completed
+  cancelled
+}
+
+// ================================
+// ORDER ITEMS
+// ================================
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Int
+  createdAt DateTime @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// ================================
+// PAYMENTS
+// ================================
+model Payment {
+  id           String        @id @default(cuid())
+  orderId      String        @unique
+  gateway      String
+  gatewayTxId  String        @unique
+  amount       Int
+  status       PaymentStatus @default(pending)
+  paidAt       DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  expired
+}
